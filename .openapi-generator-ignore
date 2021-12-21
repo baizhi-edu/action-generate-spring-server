@@ -1,0 +1,4 @@
+# OpenAPI Generator Ignore
+**/OpenAPI2SpringBoot.java
+**/RFC3339DateFormat.java
+**/resources/

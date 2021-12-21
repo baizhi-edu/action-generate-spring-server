@@ -1,0 +1,113 @@
+name: Generate Typescript Axios client
+description: Generate typescript axios client
+
+inputs:
+  openapi-file:
+    # openapi 文件路径
+    description: openapi file path
+    required: false
+    default: openapi.yml
+  project-name:
+    # 项目名称
+    description: project name
+    required: true
+  group-id:
+    # 项目组
+    description: project group id
+    required: true
+  registry:
+    # maven 仓库链接
+    description: maven registry url
+    required: true
+  username:
+    # maven 仓库用户名
+    description: maven registry username
+    required: true
+  password:
+    # maven 仓库密码
+    description: maven registry password
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # 拉取代码
+    - name: Checkout
+      uses: actions/checkout@v2
+    # 缓存 pnpm
+    - name: Cache local pnpm store
+      uses: actions/cache@v2
+      with:
+        path: ~/.pnpm-store
+        key: ${{ runner.os }}-pnpm
+    # 缓存 maven
+    - name: Cache local Maven repository
+      uses: actions/cache@v2
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven
+    # 安装 pnpm
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2.0.1
+      with:
+        version: 6.10.0
+    # 安装 node
+    - name: Setup node
+      uses: actions/setup-node@v2
+      with:
+        node-version: '14'
+    # 安装 java
+    - name: Setup java
+      uses: actions/setup-java@v2
+      with:
+        distribution: zulu
+        java-version: '11'
+
+    # 安装 zx
+    # https://github.com/google/zx
+    - name: Setup zx
+      run: pnpm i -g zx@4.2.0
+      shell: bash
+    # 安装 openapi-generator-cli
+    # https://github.com/OpenAPITools/openapi-generator
+    - name: Setup openapi-generator-cli
+      run: pnpm i -g @openapitools/openapi-generator-cli
+      shell: bash
+
+    # 设置 输出目录
+    - name: Set output dir
+      run: |
+        mkdir -p ${{ runner.temp }}/spring-output
+        echo "SPRING_OUTPUT=${{ runner.temp }}/spring-output" >> $GITHUB_ENV
+      shell: bash
+
+    # 生成代码
+    - name: Generate code
+      run: >-
+        zx ${{ github.action_path }}/generate-spring.mjs
+        --openapi ${{ inputs.openapi-file }}
+        --project ${{ inputs.project-name }}
+        --group ${{ inputs.group-id }}
+        --output ${{ env.SPRING_OUTPUT }}
+      shell: bash
+
+    # 设置 maven 发布地址
+    - name: Set Maven Registry
+      run: >-
+        python3 ${{ github.action_path }}/set-maven-repository.py
+        --pom pom.xml
+        --url ${{ inputs.registry }}
+      shell: bash
+      working-directory: ${{ env.SPRING_OUTPUT }}
+
+    # 设置 maven server
+    - name: Set Maven Server
+      uses: whelk-io/maven-settings-xml-action@v20
+      with:
+        servers: '[{ "id": "maven", "username": "${{ inputs.username }}", "password": "${{ inputs.password }}" }]'
+
+    # 发布到 maven
+    - name: Maven deploy
+      run: mvn deploy -q
+      shell: bash
+      working-directory: ${{ env.SPRING_OUTPUT }}
